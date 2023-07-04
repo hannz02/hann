@@ -1,0 +1,710 @@
+#Kor_Yu_Hann
+#TP06648
+#-----------------------------------------------------Libraries------------------------------------------------------------
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(magrittr)
+library(plotrix)
+library(hrbrthemes)
+library(ggExtra)
+
+#-----------------------------------------------------Data Importing------------------------------------------------------------
+House_Rent_Dataset <- read.csv("E:\\Studies\\Y2S1\\PFDA\\Assignment\\House_Rent_Dataset.csv", header = TRUE)
+#-----------------------------------------------------Data Exploration------------------------------------------------------------
+summary(House_Rent_Dataset)
+nrow(House_Rent_Dataset)
+ncol(House_Rent_Dataset)
+head(House_Rent_Dataset)
+tail(House_Rent_Dataset)
+colSums(is.na(House_Rent_Dataset))
+#-----------------------------------------------------Extra Functions List------------------------------------------------------------
+ChangeDate <- function(date){
+  House_Rent_Dataset$NewDates <- as.Date(date, "%m/%d/%Y")
+}
+
+#-----------------------------------------------------    Data Cleaning   ------------------------------------------------------------
+#Used to drop Posted.On column because it is wrong
+House_Rent_Dataset <- subset(House_Rent_Dataset, select = -c(Posted.On))
+head(House_Rent_Dataset)
+#-----------------------------------------------------Data Pre-processing ------------------------------------------------------------
+#Data Pre-processing 1.0
+#To change the date to the correct format
+OldDates <- House_Rent_Dataset$Posted.On
+NewDates <- ChangeDate(OldDates)
+NewDates
+class(NewDates)
+House_Rent_Dataset['Posted.Dates'] <- c(NewDates)
+
+#Data Pre-processing 2.0
+#2.0.1 Used to split the floors
+House_Rent_Dataset <- House_Rent_Dataset %>% separate(Floor,c("Current.Floor", "Total.Floors")," out of ")
+
+#2.0.2 Used to check null values
+which(is.na(House_Rent_Dataset$Current.Floor))
+which(is.na(House_Rent_Dataset$Total.Floors)) # This shows that there are 4 null values
+
+#2.0.3 Used to change all string value in Total.Floors into integer
+for (x in 1:nrow(House_Rent_Dataset)){
+  if (House_Rent_Dataset[x,4]=="Ground"){
+    House_Rent_Dataset[x,4]=0
+  }else if(House_Rent_Dataset[x,4]=="Upper Basement"){
+    House_Rent_Dataset[x,4]=-1
+  }else if(House_Rent_Dataset[x,4]=="Lower Basement"){
+    House_Rent_Dataset[x,4]=-2
+  }
+}
+
+#2.0.4 Used to solve null values with mean imputation
+House_Rent_Dataset$Total.Floors[is.na(House_Rent_Dataset$Total.Floors)] <- mean(House_Rent_Dataset$Total.Floors, na.rm = TRUE)
+class(House_Rent_Dataset$Current.Floor) = "integer"
+class(House_Rent_Dataset$Total.Floors) = "integer"
+
+#2.0.5 Used to swap the two wrong values for both columns
+House_Rent_Dataset[House_Rent_Dataset$Current.Floor > House_Rent_Dataset$Total.Floors,c("Current.Floor","Total.Floors")] <- House_Rent_Dataset[House_Rent_Dataset$Current.Floor > House_Rent_Dataset$Total.Floors,c("Total.Floors","Current.Floor")]
+
+
+#Data Pre-processing 3.0 Solve the outliers
+#3.0.1 To identify the outliers
+summary(House_Rent_Dataset$Rent)
+ggplot(House_Rent_Dataset, aes(x="", y=Rent))+
+  geom_boxplot()
+#Used to get the mean and standard deviation
+RentMean <- mean(House_Rent_Dataset$Rent)
+RentStd <- sd(House_Rent_Dataset$Rent)
+#Used to get the threshold values for outliers
+OutlierMin <- RentMean-(3*RentStd)
+OutlierMax <- RentMean+(3*RentStd)
+#Used to find outlier
+Outlier <- House_Rent_Dataset[which(House_Rent_Dataset$Rent < OutlierMin | House_Rent_Dataset$Rent > OutlierMax),]
+#Used to remove outlier
+New_House_Rent_Dataset <- House_Rent_Dataset[which(House_Rent_Dataset$Rent > OutlierMin & House_Rent_Dataset$Rent < OutlierMax),]
+summary(New_House_Rent_Dataset$Rent)
+ggplot(New_House_Rent_Dataset, aes(x="", y=Rent))+
+  geom_boxplot()
+#-----------------------------------------------------Questions and Analysis------------------------------------------------------------
+#Q1 Which houses would mostly be favorable for families
+#Analysis_1-1 The relationship between rent and size in an area
+#To find the 3rd quartile of the size
+quantile(New_House_Rent_Dataset$Size, c(0.75))
+
+#To find the 1st quaratile of the rent
+quantile(New_House_Rent_Dataset$Rent, c(0.25))
+
+#To find the data that has the condition
+New_House_Rent_Dataset[New_House_Rent_Dataset$Size>1200 & House_Rent_Dataset$Rent<10000,]
+
+
+#Analysis_1-2 The relationship between the furnishing status and rent
+#To find which city has the most furnished houses that have rent lesser than 1st Quartile 
+rental <- New_House_Rent_Dataset[New_House_Rent_Dataset$Rent<10000,]
+rental
+ggplot(rental, aes(x = Furnishing.Status, y =  Rent, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=2,
+               notch = TRUE,
+               width = 0.5,
+               col=rgb(1,0,0,alpha = 0.4)) +
+  facet_wrap(~Furnishing.Status)
+
+
+#Analysis_1-3 The relationship between BHK and size 
+#To find which city has a bigger size with higher number of BHK
+New_House_Rent_Dataset[New_House_Rent_Dataset$Size>1200 & New_House_Rent_Dataset$BHK>=2,]
+ggplot(New_House_Rent_Dataset, aes(x=BHK,y=Size)) + 
+  geom_point(aes(shape=factor(BHK),color = factor(BHK))) + labs(title = "The relationship between BHK and size")
+
+
+#Analysis_1-4 The relationship between Area.Type and Rent
+#To find the area type with the lowest rent
+rental <- New_House_Rent_Dataset[New_House_Rent_Dataset$Rent<10000,]
+rental
+nrow(rental)
+a <- nrow(rental[rental$Area.Type == "Carpet Area",])
+b <- nrow(rental[rental$Area.Type == "Super Area",])
+c <- nrow(rental[rental$Area.Type == "Built Area",])
+df <- c(a,b,c)
+df_labels <- c("Carpet Area 31.4%", "Super Area 68.5%", "Built Area 0.1%")
+pie(df,df_labels,radius=1,main="The relationship between Area.Type and Rent",col=rainbow(length(df_labels)), clockwise = TRUE)
+
+
+#Analysis_1-5 The relationship between Bathroom and BHK 
+quantile(New_House_Rent_Dataset$Bathroom, c(0.75))
+rlsp <- New_House_Rent_Dataset[New_House_Rent_Dataset$Bathroom>=2 & New_House_Rent_Dataset$BHK>=2,]
+rlsp
+ggplot(rlsp, aes(x=BHK, y=Bathroom)) +
+  geom_point(aes(color=BHK)) +
+  labs(title = "The relationship between Bathroom and BHK") +
+  facet_wrap(~BHK) 
+maxbathroom <- max(rlsp$Bathroom)
+maxbhk <- max(rlsp$BHK)
+rlsp[rlsp$Bathroom == 7 & rlsp$BHK == 6,]
+
+
+#Analysis_1-6 The relationship between City and Posted on Date
+max(New_House_Rent_Dataset$Posted.Dates)
+min(New_House_Rent_Dataset$Posted.Dates)
+WantedDates <- New_House_Rent_Dataset[New_House_Rent_Dataset$Posted.Dates>"2022-06-01",]
+WantedDates
+ggplot(WantedDates, aes(x=City, color=City)) +
+  geom_bar(width = 0.5, fill="white") +
+  theme(legend.position = "top")
+
+
+#Analysis_1-7 The relationship between City and Tenant.Preferred
+rental <- New_House_Rent_Dataset[New_House_Rent_Dataset$Rent<10000,]
+rental
+B <- nrow(rental[rental$Tenant.Preferred == "Bachelors",])
+F <- nrow(rental[rental$Tenant.Preferred == "Family",])
+BF <- nrow(rental[rental$Tenant.Preferred == "Bachelors/Family",])
+df <- c(B,F,BF)
+df_labels <- c("Bachelors 12.7%", "Family 3.2%", "Bachelors/Family 84.1%")
+pie(df,df_labels,radius=1,main="The relationship between City  and Tenant.Preferred",col=rainbow(length(df_labels)), clockwise = TRUE)
+
+
+#Q2 Does Tenants.Preferred affect the other data?
+#Analysis_2-1 The relationship between Rent and Tenant.Preferred
+ggplot(New_House_Rent_Dataset, aes(x = Tenant.Preferred, y =  Rent, fill = Tenant.Preferred)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.5) +
+  scale_fill_brewer(palette = "Dark2")+
+  facet_wrap(~Tenant.Preferred)
+
+
+#Analysis_2-2 The relationship between Size and Tenant.Preferred
+ggplot(New_House_Rent_Dataset, aes(x = Tenant.Preferred, y =  Size, fill = Tenant.Preferred)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 1) +
+  scale_fill_brewer(palette = "BuPu")+
+  facet_wrap(~Tenant.Preferred)
+
+
+#Analysis_2-3 The relationship between BHK and Tenant.Preferred (Bachelors)
+BHKB <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Bachelors",]
+ggplot(BHKB, aes(x=BHK, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between BHK and Tenant.Preferred (Bachelors)")+
+  scale_fill_manual(values=c("light blue"))
+
+
+#Analysis_2-4 The relationship between BHK and Tenant.Preferred (Bachelors/Family)
+BHKBF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Bachelors/Family",]
+ggplot(BHKBF, aes(x=BHK, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between BHK and Tenant.Preferred (Bachelors/Family)")+
+  scale_fill_manual(values=c("light green"))
+
+
+
+#Analysis_2-5 The relationship between BHK and Tenant.Preferred (Family)
+BHKF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Family",]
+ggplot(BHKF, aes(x=BHK, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between BHK and Tenant.Preferred (Family)")+
+  scale_fill_manual(values=c("light yellow"))
+
+
+#Analysis_2-6 The relationship between Bathroom and Tenant.Preferred (Bachelors)
+BB <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Bachelors",]
+ggplot(BB, aes(x=Bathroom, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between Bathroom and Tenant.Preferred (Bachelors)")+
+  scale_fill_manual(values=c("orange"))
+
+
+#Analysis_2-7 The relationship between Bathroom and Tenant.Preferred (Bachelors/Family)
+BBF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Bachelors/Family",]
+ggplot(BBF, aes(x=Bathroom, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between Bathroom and Tenant.Preferred (Bachelors/Family)")+
+  scale_fill_manual(values=c("red"))
+
+
+
+#Analysis_2-8 The relationship between Bathroom and Tenant.Preferred (Family)
+BF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Tenant.Preferred == "Family",]
+ggplot(BF, aes(x=Bathroom, fill=Tenant.Preferred)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between Bathroom and Tenant.Preferred (Family)")+
+  scale_fill_manual(values=c("purple"))
+
+
+#Q3 Is there a difference for furnishing statuses?
+#Analysis_3-1 The relationship between Rent and furnishing status
+ggplot(New_House_Rent_Dataset, aes(x = Furnishing.Status, y =  Rent, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.8) 
+
+
+#Analysis_3-2 The relationship between Size and furnishing status
+ggplot(New_House_Rent_Dataset, aes(x = Furnishing.Status, y =  Size, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) 
+
+
+#Analysis_3-3 The relationship between Tenant.Preferred and furnishing status
+ggplot(New_House_Rent_Dataset, aes(x=Furnishing.Status, y=Tenant.Preferred)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Tenant.Preferred and Furnishing.Status", x="Furnishing.Status", y="Tenant.Preferred") 
+
+
+#Analysis_3-4 The relationship between Area.Type and furnishing status
+ggplot(New_House_Rent_Dataset, aes(x=Furnishing.Status, y=Area.Type)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend')+
+  labs(title = "The relationship between Area.Type and Furnishing.Status", x="Furnishing.Status", y="Area.Type") 
+
+    
+#Analysis_3-5 The relationship between BHK and furnishing status(Furnished)
+BHKFF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Furnished",]
+ggplot(BHKFF, aes(x=BHK)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "#0099F8") +
+  geom_density(color = "#000000", 
+               fill = "#F85700",
+               alpha = 0.6)
+
+
+#Analysis_3-6 The relationship between BHK and furnishing status(Semi-Furnished)
+BHKSF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Semi-Furnished",]
+ggplot(BHKSF, aes(x=BHK)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "green") +
+  geom_density(color = "#000000", 
+               fill = "purple",
+               alpha = 0.6)
+
+
+#Analysis_3-7 The relationship between BHK and furnishing status(Unfurnished)
+BHKUF <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Unfurnished",]
+ggplot(BHKUF, aes(x=BHK)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "red") +
+  geom_density(color = "#000000", 
+               fill = "yellow",
+               alpha = 0.6)
+
+#Analysis_3-8 The relationship between Bathroom and furnishing status
+ggplot(New_House_Rent_Dataset, aes(x = Furnishing.Status, y =  Bathroom, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 1) +
+  scale_fill_brewer(palette = "BuPu")+
+  facet_wrap(~Furnishing.Status)
+
+#Q4 Does floor has effects on the other condition?
+#Analysis_4-1 The relationship between Current.Floor and Rent
+ggplot(New_House_Rent_Dataset, aes(x=Current.Floor, y=Rent))+
+  geom_line(color="light blue", size=2, alpha=0.9, linetype=1)+
+  geom_smooth(method = lm,color="red",fill="dark blue",se=TRUE)+
+  theme_ipsum()+
+  labs(title="The relationship between Current.Floor and Rent")
+
+
+#Analysis_4-2 The relationship between Current.Floor and Size
+PlotCFS<-ggplot(New_House_Rent_Dataset, aes(x=Current.Floor, y=Size,color=Current.Floor))+
+            geom_point()+
+            geom_smooth(method = lm,color="red",fill="#69b3a2",se=TRUE)+
+            geom_rug()+
+            labs(title="The relationship between Current.Floor and Size")
+Plot2CFS <- ggMarginal(PlotCFS, type="histogram", size=10, fill="light blue")
+Plot2CFS
+
+
+#Analysis_4-3 The relationship between Current.Floor and BHK
+ggplot(New_House_Rent_Dataset, aes(x=Current.Floor, y=BHK))+
+  geom_line(color="light green", size=2, alpha=0.9, linetype=1)+
+  geom_smooth(method = lm,color="red",fill="dark blue",se=TRUE)+
+  theme_ipsum()+
+  labs(title="The relationship between Current.Floor and BHK")
+
+
+#Analysis_4-4 The relationship between Current.Floor and Bathroom
+PlotCFB<-ggplot(New_House_Rent_Dataset, aes(x=Current.Floor, y=Bathroom,color=Current.Floor))+
+  geom_point()+
+  geom_smooth(method = lm,color="red",fill="#69b3a2",se=TRUE)+
+  geom_rug()+
+  labs(title="The relationship between Current.Floor and Bathroom")
+Plot2CFB <- ggMarginal(PlotCFB, type="histogram", size=10, fill="light blue")
+Plot2CFB
+
+
+#Analysis_4-5 The relationship between Current.Floor and Furnishing.Status
+ggplot(New_House_Rent_Dataset, aes(x = Furnishing.Status, y =  Current.Floor, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Furnishing.Status)
+
+#Analysis_4-6 The relationship between Current.Floor and Area.Type
+ggplot(New_House_Rent_Dataset, aes(x = Area.Type, y =  Current.Floor, fill = Area.Type)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Area.Type)
+
+
+#Analysis_4-7 The relationship between Current.Floor and Tenant.Preferred
+ggplot(New_House_Rent_Dataset, aes(x = Tenant.Preferred, y =  Current.Floor, fill = Tenant.Preferred)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Tenant.Preferred)
+
+
+#Analysis_4-8 The relationship between Current.Floorr and Point.of.Contact
+ggplot(New_House_Rent_Dataset, aes(x = Point.of.Contact, y =  Current.Floor, fill = Point.of.Contact)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Point.of.Contact)
+
+
+#Q5 Is there a difference between Point.of.Contact?
+#Analysis_5-1 The relationship between Point.of.Contact  and Rent
+ggplot(New_House_Rent_Dataset, aes(x = Point.of.Contact, y =  Rent, fill = Point.of.Contact)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Point.of.Contact)
+
+
+#Analysis_5-2 The relationship between Point.of.Contact (Contact Owner) and size
+POCCO <- New_House_Rent_Dataset[New_House_Rent_Dataset$Point.of.Contact == "Contact Owner",]
+ggplot(POCCO, aes(x=Size, color=Point.of.Contact)) +
+  geom_bar(width = 0.5, fill="white") +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between Point.of.Contact (Contact Owner) and size")
+
+
+#Analysis_5-3 The relationship between Point.of.Contact (Contact Agent) and size
+POCCA <- New_House_Rent_Dataset[New_House_Rent_Dataset$Point.of.Contact == "Contact Agent",]
+ggplot(POCCA, aes(x=Size, color=Point.of.Contact)) +
+  geom_bar(width = 0.5, fill="white") +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between Point.of.Contact (Contact Agent) and size")
+
+
+#Analysis_5-4 The relationship between Point.of.Contact and BHK
+ggplot(New_House_Rent_Dataset, aes(x = Point.of.Contact, y =  BHK, fill = Point.of.Contact)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 1,
+               alpha = 0.4) +
+  facet_wrap(~Point.of.Contact)
+
+
+#Analysis_5-5 The relationship between Point.of.Contact and Bathroom
+ggplot(New_House_Rent_Dataset, aes(x = Point.of.Contact, y =  Bathroom, fill = Point.of.Contact)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 1,
+               alpha = 0.4) +
+  facet_wrap(~Point.of.Contact)
+
+
+#Analysis_5-6 The relationship between Point.of.Contact and Furnishing.Status
+ggplot(New_House_Rent_Dataset, aes(x=Point.of.Contact, y=Furnishing.Status)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Point.of.Contact and Furnishing.Status", x="Point.of.Contact", y="Furnishing.Status") 
+  
+  
+#Analysis_5-7 The relationship between Point.of.Contact and Area.Type
+ggplot(New_House_Rent_Dataset, aes(x=Point.of.Contact, y=Area.Type)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Point.of.Contact and Area.Type") 
+  
+
+#Q6 What are the trends for the data in different cities?
+#Analysis_6-1 The relationship between Cities and Rent(Highest)
+MaxRental <- New_House_Rent_Dataset[New_House_Rent_Dataset$Rent>quantile(New_House_Rent_Dataset$Rent, c(0.75)),]
+#6-1-1 To find the cities with high rent
+NoOfMaxRentalMumbai <- nrow(MaxRental[MaxRental$City=="Mumbai",])
+NoOfMaxRentalKolkata <- nrow(MaxRental[MaxRental$City=="Kolkata",])
+NoOfMaxRentalHyderabad <- nrow(MaxRental[MaxRental$City=="Hyderabad",])
+NoOfMaxRentalDelhi <- nrow(MaxRental[MaxRental$City=="Delhi",])
+NoOfMaxRentalChennai <- nrow(MaxRental[MaxRental$City=="Chennai",])
+NoOfMaxRentalBangalore <- nrow(MaxRental[MaxRental$City=="Bangalore",])
+DataPie <- c(NoOfMaxRentalMumbai,NoOfMaxRentalKolkata,NoOfMaxRentalHyderabad,NoOfMaxRentalDelhi,NoOfMaxRentalChennai,NoOfMaxRentalBangalore)
+CityLabels <- c("Mumbai", "Kolkata", "Hyderabad", "Delhi", "Chennai", "Bangalore")
+#Build a 3D Pie Chart for the data 
+pie3D(DataPie,labels = CityLabels,radius=.9,border = "white",col = hcl.colors(length(DataPie), "spectral"),explode=.1)
+
+#Analysis_6-2 The relationship between Cities and Rent(Lowest)
+MinRental <- New_House_Rent_Dataset[New_House_Rent_Dataset$Rent<quantile(New_House_Rent_Dataset$Rent, c(0.25)),]
+#6-2-1 To find the cities with low rent
+NoOfMinRentalMumbai <- nrow(MinRental[MinRental$City=="Mumbai",])
+NoOfMinRentalKolkata <- nrow(MinRental[MinRental$City=="Kolkata",])
+NoOfMinRentalHyderabad <- nrow(MinRental[MinRental$City=="Hyderabad",])
+NoOfMinRentalDelhi <- nrow(MinRental[MinRental$City=="Delhi",])
+NoOfMinRentalChennai <- nrow(MinRental[MinRental$City=="Chennai",])
+NoOfMinRentalBangalore <- nrow(MinRental[MinRental$City=="Bangalore",])
+DataPie <- c(NoOfMinRentalMumbai,NoOfMinRentalKolkata,NoOfMinRentalHyderabad,NoOfMinRentalDelhi,NoOfMinRentalChennai,NoOfMinRentalBangalore)
+CityLabels <- c("Mumbai", "Kolkata", "Hyderabad", "Delhi", "Chennai", "Bangalore")
+#Build a 3D Pie Chart for the data 
+pie3D(DataPie,labels = CityLabels,radius=.85,border = "white",col = hcl.colors(length(DataPie), "spectral"), explode=.1)
+
+#Analysis_6-3 The relationship between Cities and Size(Largest)
+MaxSize <- New_House_Rent_Dataset[New_House_Rent_Dataset$Size<quantile(New_House_Rent_Dataset$Size, c(0.75)),]
+#6-3-1 To find the cities with large size
+NoOfMaxSizeMumbai <- nrow(MaxSize[MaxSize$City=="Mumbai",])
+NoOfMaxSizeKolkata <- nrow(MaxSize[MaxSize$City=="Kolkata",])
+NoOfMaxSizeHyderabad <- nrow(MaxSize[MaxSize$City=="Hyderabad",])
+NoOfMaxSizeDelhi <- nrow(MaxSize[MaxSize$City=="Delhi",])
+NoOfMaxSizeChennai <- nrow(MaxSize[MaxSize$City=="Chennai",])
+NoOfMaxSizeBangalore <- nrow(MaxSize[MaxSize$City=="Bangalore",])
+DataPie <- c(NoOfMaxSizeMumbai,NoOfMaxSizeKolkata,NoOfMaxSizeHyderabad,NoOfMaxSizeDelhi,NoOfMaxSizeChennai,NoOfMaxSizeBangalore)
+CityLabels <- c("Mumbai", "Kolkata", "Hyderabad", "Delhi", "Chennai", "Bangalore")
+#Build a 3D Pie Chart for the data 
+pie3D(DataPie,labels = CityLabels,radius=.85,border = "white",col = hcl.colors(length(DataPie), "spectral"), explode=.1)
+
+
+
+#Analysis_6-4 The relationship between Cities and Size(Smallest)
+MinSize <- New_House_Rent_Dataset[New_House_Rent_Dataset$Size<quantile(New_House_Rent_Dataset$Size, c(0.25)),]
+#6-4-1 To find the cities with small size
+NoOfMinSizeMumbai <- nrow(MinSize[MinSize$City=="Mumbai",])
+NoOfMinSizeKolkata <- nrow(MinSize[MinSize$City=="Kolkata",])
+NoOfMinSizeHyderabad <- nrow(MinSize[MinSize$City=="Hyderabad",])
+NoOfMinSizeDelhi <- nrow(MinSize[MinSize$City=="Delhi",])
+NoOfMinSizeChennai <- nrow(MinSize[MinSize$City=="Chennai",])
+NoOfMinSizeBangalore <- nrow(MinSize[MinSize$City=="Bangalore",])
+DataPie <- c(NoOfMinSizeMumbai,NoOfMinSizeKolkata,NoOfMinSizeHyderabad,NoOfMinSizeDelhi,NoOfMinSizeChennai,NoOfMinSizeBangalore)
+CityLabels <- c("Mumbai", "Kolkata", "Hyderabad", "Delhi", "Chennai", "Bangalore")
+#Build a 3D Pie Chart for the data 
+pie3D(DataPie,labels = CityLabels,radius=.85,border = "white",col = hcl.colors(length(DataPie), "spectral"), explode=.1)
+
+#Analysis_6-5 The relationship between Cities and Area.Type(Super Area)
+ATSA <- New_House_Rent_Dataset[New_House_Rent_Dataset$Area.Type == "Super Area",]
+ggplot(ATSA, aes(x=Area.Type, y=City)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Area.Type(Super Area) and City", x="Area.Type", y="City") 
+
+
+#Analysis_6-6 The relationship between Cities and Area.Type(Carpet Area)
+ATCA <- New_House_Rent_Dataset[New_House_Rent_Dataset$Area.Type == "Carpet Area",]
+ggplot(ATCA, aes(x=Area.Type, y=City)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Area.Type(Carpet Area) and City", x="Furnishing.Status", y="Area.Type") 
+
+
+#Analysis_6-7 The relationship between Cities and Bathroom(Most)
+MaxBathroom <- New_House_Rent_Dataset[New_House_Rent_Dataset$Bathroom>quantile(New_House_Rent_Dataset$Bathroom, c(0.75)),]
+ggplot(MaxBathroom, aes(x=Bathroom)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "#0099F8") +
+  geom_density(color = "#000000", 
+               fill = "#F85700",
+               alpha = 0.6)+
+  facet_wrap(~City)
+
+#Analysis_6-8 The relationship between Cities and Bathroom(Least)
+MinBathroom <- New_House_Rent_Dataset[New_House_Rent_Dataset$Bathroom<=quantile(New_House_Rent_Dataset$Bathroom, c(0.75)),]
+ggplot(MinBathroom, aes(x=Bathroom)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "#0099F8") +
+  geom_density(color = "#000000", 
+               fill = "#F85700",
+               alpha = 0.6)+
+  facet_wrap(~City)
+
+#Analysis_6-9 The relationship between Cities and BHK(Most)
+MaxBHK <- New_House_Rent_Dataset[New_House_Rent_Dataset$BHK>quantile(New_House_Rent_Dataset$BHK, c(0.75)),]
+ggplot(MaxBHK, aes(x=BHK)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "#0099F8") +
+  geom_density(color = "#000000", 
+               fill = "#F85700",
+               alpha = 0.6)+
+  facet_wrap(~City)
+
+#Analysis_6-10 The relationship between Cities and BHK(Least)
+MinBHK <- New_House_Rent_Dataset[New_House_Rent_Dataset$BHK<=quantile(New_House_Rent_Dataset$BHK, c(0.25)),]
+ggplot(MinBHK, aes(x=BHK)) +
+  geom_histogram(binwidth = 0.2, 
+                 bins=1.0,
+                 aes(y = ..density..),
+                 color = "#000000",
+                 fill = "#0099F8") +
+  geom_density(color = "#000000", 
+               fill = "#F85700",
+               alpha = 0.6)+
+  facet_wrap(~City)
+
+
+#Analysis_6-11 The relationship between Cities and Furnishing.Status(Furnished)
+FFS <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Furnished",]
+ggplot(FFS, aes(x=Furnishing.Status, y=City)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Point of Contact and Furnishing.Status", x="Furnishing.Status", y="Cities") 
+
+
+
+#Analysis_6-12 The relationship between Cities and Furnishing.Status(Semi-Furnished)
+SFFS <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Semi-Furnished",]
+ggplot(SFFS, aes(x=Furnishing.Status, y=City)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Point of Contact and Furnishing.Status", x="Furnishing.Status", y="Cities") 
+
+
+#Analysis_6-13 The relationship between Cities and Furnishing.Status(Unfurnished)
+UFFS <- New_House_Rent_Dataset[New_House_Rent_Dataset$Furnishing.Status == "Unfurnished",]
+ggplot(UFFS, aes(x=Furnishing.Status, y=City)) +
+  geom_count(aes(color=..n.., size=..n..)) +
+  guides(color = 'legend') +
+  labs(title = "The relationship between Point of Contact and Furnishing.Status", x="Furnishing.Status", y="Cities") 
+
+
+
+#Q7 What factors affect the rent?
+#Analysis_7-1 The relationship between Rent and Size
+ggplot(New_House_Rent_Dataset, aes(x=Size, y=Rent, color=Size))+
+  geom_point()+
+  labs(title="The relationship between rent and size")+
+  theme(
+    plot.title = element_text(color = "#0099f9", size = 20, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 13, face = "bold", hjust = 0.5),
+    plot.caption = element_text(face = "italic", hjust = 0),
+    axis.title.x = element_text(color = "#0099f9", size = 16, face = "bold"),
+    axis.title.y = element_text(color = "#0099f9", size = 16, face = "italic"),
+  )+
+  geom_smooth()+
+  geom_rug()
+
+
+#Analysis_7-2 The relationship between rent and BHK
+ggplot(New_House_Rent_Dataset, aes(x=BHK, y=Rent, color=Size))+
+  geom_point()+
+  labs(title="The relationship between rent and BHK")+
+  theme(
+    plot.title = element_text(color = "#0099f9", size = 20, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 13, face = "bold", hjust = 0.5),
+    plot.caption = element_text(face = "italic", hjust = 0),
+    axis.title.x = element_text(color = "#0099f9", size = 16, face = "bold"),
+    axis.title.y = element_text(color = "#0099f9", size = 16, face = "italic"),
+  )+
+  geom_rug()
+
+
+#Analysis_7-3 The relationship between rent and Area.Type
+ggplot(New_House_Rent_Dataset, aes(x=Area.Type, fill=Area.Type)) +
+  geom_bar(width = 0.5) +
+  theme(legend.position = "top") +
+  labs(title = "The relationship between rent and Area.Type")+
+  scale_fill_manual(values=c("#CD5C5C", "#FA8072", "#FFA07A"))+
+  facet_wrap(~Area.Type)
+
+
+#Analysis_7-4 The relationship between rent and Bathroom
+ggplot(New_House_Rent_Dataset, aes(x=Bathroom, y=Rent, color=Size))+
+  geom_point()+
+  labs(title="The relationship between rent and BHK")+
+  theme(
+    plot.title = element_text(color = "#0099f9", size = 20, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 13, face = "bold", hjust = 0.5),
+    plot.caption = element_text(face = "italic", hjust = 0),
+    axis.title.x = element_text(color = "#0099f9", size = 16, face = "bold"),
+    axis.title.y = element_text(color = "#0099f9", size = 16, face = "italic"),
+  )+
+  geom_rug()
+
+
+#Analysis_7-5 The relationship between rent and Furnishing.Status
+ggplot(New_House_Rent_Dataset, aes(x = Furnishing.Status, y =  Rent, fill = Furnishing.Status)) +
+  geom_boxplot(lwd=1,
+               notch = TRUE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Furnishing.Status)
+
+
+#Analysis_7-6 The relationship between high rent and City
+ggplot(MaxRental, aes(x = City, y =  Rent, fill = City)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~City)
+
+
+#Analysis_7-7 The relationship between low rent and City
+ggplot(MinRental, aes(x = City, y =  Rent, fill = City)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~City)
+
+
+#Analysis_7-8 The relationship between rent and Tenant.Preferred
+ggplot(New_House_Rent_Dataset, aes(x = Tenant.Preferred, y =  Rent, fill = Tenant.Preferred)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Tenant.Preferred)
+
+
+#Analysis_7-9 The relationship between high rent and Point.of.Contact
+ggplot(MaxRental, aes(x = Point.of.Contact, y =  Rent, fill = Point.of.Contact)) +
+  geom_boxplot(lwd=1,
+               notch = FALSE,
+               width = 2,
+               alpha = 0.4) +
+  facet_wrap(~Point.of.Contact)
+
+
+
+
+#put more 3D graphs
+#transform date format
+#if bar graph is not good, go for line graph
+
+#only one categorical - pie chart
+#only one continuous data - histogram/pie chart
+#two continuous - line chart/scatter plot 
+#one category one continuous - bar plot/boxplot
